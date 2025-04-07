@@ -1,8 +1,9 @@
 {
   "name": "digramaatic_ui",
   "private": true,
-  "version": "0.0.0",
+  "version": "0.0.1",
   "type": "module",
+  "description":"This is a UI Library for generating Graphs and Dependency Diagrams.",
   "scripts": {
     "dev": "vite",
     "build": "tsc -b && vite build",

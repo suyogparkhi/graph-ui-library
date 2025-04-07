@@ -7,53 +7,71 @@ export const sampleData: GraphData = {
   analyzedAt: "2025-03-22T16:30:00Z",
   nodes: [
     {
-      id: "component1",
-      name: "DashboardLayout",
+      id: "dashboard",
+      name: "Dashboard",
       type: "component",
       language: "typescript",
-      filepath: "src/components/layouts/DashboardLayout.tsx",
+      filepath: "src/components/Dashboard.tsx",
       metadata: {
-        isDefault: true,
-        description: "Main dashboard layout component",
-        props: ["children: ReactNode", "sidebar?: boolean"],
+        description: "Main dashboard component that orchestrates the layout",
+        props: ["theme: 'light' | 'dark'", "user: User"],
+        exports: ["Dashboard"],
+        dependencies: ["useAuth", "ThemeProvider", "Sidebar", "MainContent"]
       },
     },
     {
-      id: "component2",
+      id: "sidebar",
+      name: "Sidebar",
+      type: "component",
+      language: "typescript",
+      filepath: "src/components/Sidebar.tsx",
+      metadata: {
+        description: "Navigation sidebar component",
+        props: ["items: NavItem[]", "onSelect: (item: NavItem) => void"],
+        exports: ["Sidebar"],
+        dependencies: ["useAuth", "ThemeProvider"]
+      },
+    },
+    {
+      id: "mainContent",
+      name: "MainContent",
+      type: "component",
+      language: "typescript",
+      filepath: "src/components/MainContent.tsx",
+      metadata: {
+        description: "Main content area component",
+        props: ["children: ReactNode"],
+        exports: ["MainContent"],
+        dependencies: ["DataGrid", "useData"]
+      },
+    },
+    {
+      id: "useAuth",
       name: "useAuth",
       type: "hook",
       language: "typescript",
       filepath: "src/hooks/useAuth.ts",
       metadata: {
-        description: "Authentication hook",
+        description: "Authentication hook for managing user state",
         returns: "AuthContextValue",
-        dependencies: ["useContext", "useState"],
+        exports: ["useAuth"],
+        dependencies: ["AuthContext", "useState", "useEffect"]
       },
     },
     {
-      id: "component3",
-      name: "ApiService",
-      type: "service",
+      id: "authContext",
+      name: "AuthContext",
+      type: "context",
       language: "typescript",
-      filepath: "src/services/ApiService.ts",
+      filepath: "src/contexts/AuthContext.tsx",
       metadata: {
-        description: "API communication service",
-        methods: ["get<T>", "post<T>", "put<T>", "delete"],
+        description: "Authentication context provider",
+        exports: ["AuthProvider", "AuthContext"],
+        dependencies: ["useAuth"]
       },
     },
     {
-      id: "component4",
-      name: "DataGrid",
-      type: "component",
-      language: "typescript",
-      filepath: "src/components/DataGrid/index.tsx",
-      metadata: {
-        description: "Reusable data grid component",
-        props: ["data: T[]", "columns: Column[]", "onSort?: SortFn"],
-      },
-    },
-    {
-      id: "component5",
+      id: "themeProvider",
       name: "ThemeProvider",
       type: "context",
       language: "typescript",
@@ -61,63 +79,163 @@ export const sampleData: GraphData = {
       metadata: {
         description: "Theme context provider",
         exports: ["ThemeProvider", "useTheme"],
+        dependencies: ["useTheme"]
       },
     },
     {
-      id: "component6",
-      name: "utils",
-      type: "module",
+      id: "useTheme",
+      name: "useTheme",
+      type: "hook",
       language: "typescript",
-      filepath: "src/utils/index.ts",
+      filepath: "src/hooks/useTheme.ts",
       metadata: {
-        description: "Common utility functions",
-        exports: ["formatDate", "formatCurrency", "debounce"],
+        description: "Theme management hook",
+        returns: "ThemeContextValue",
+        exports: ["useTheme"],
+        dependencies: ["ThemeContext"]
       },
     },
+    {
+      id: "dataGrid",
+      name: "DataGrid",
+      type: "component",
+      language: "typescript",
+      filepath: "src/components/DataGrid.tsx",
+      metadata: {
+        description: "Reusable data grid component",
+        props: ["data: T[]", "columns: Column[]", "onSort?: SortFn"],
+        exports: ["DataGrid"],
+        dependencies: ["useData", "useSort"]
+      },
+    },
+    {
+      id: "useData",
+      name: "useData",
+      type: "hook",
+      language: "typescript",
+      filepath: "src/hooks/useData.ts",
+      metadata: {
+        description: "Data fetching and management hook",
+        returns: "DataContextValue",
+        exports: ["useData"],
+        dependencies: ["DataContext", "useEffect"]
+      },
+    },
+    {
+      id: "useSort",
+      name: "useSort",
+      type: "hook",
+      language: "typescript",
+      filepath: "src/hooks/useSort.ts",
+      metadata: {
+        description: "Sorting functionality hook",
+        returns: "SortContextValue",
+        exports: ["useSort"],
+        dependencies: ["SortContext"]
+      },
+    }
   ],
   edges: [
     {
-      source: "component1",
-      target: "component2",
+      source: "dashboard",
+      target: "sidebar",
+      type: "uses",
+      metadata: {
+        usage: "Layout composition",
+        location: "Dashboard.tsx",
+        functions: ["render"]
+      },
+    },
+    {
+      source: "dashboard",
+      target: "mainContent",
+      type: "uses",
+      metadata: {
+        usage: "Layout composition",
+        location: "Dashboard.tsx",
+        functions: ["render"]
+      },
+    },
+    {
+      source: "dashboard",
+      target: "useAuth",
       type: "uses",
       metadata: {
         usage: "Authentication check",
         location: "useEffect",
+        functions: ["useAuth"]
       },
     },
     {
-      source: "component1",
-      target: "component5",
+      source: "dashboard",
+      target: "themeProvider",
       type: "uses",
       metadata: {
         usage: "Theme consumption",
-        hook: "useTheme",
+        location: "useTheme",
+        functions: ["useTheme"]
       },
     },
     {
-      source: "component4",
-      target: "component6",
-      type: "imports",
-      metadata: {
-        functions: ["debounce"],
-      },
-    },
-    {
-      source: "component2",
-      target: "component3",
+      source: "sidebar",
+      target: "useAuth",
       type: "uses",
       metadata: {
-        methods: ["post('/auth/login')", "post('/auth/logout')"],
+        usage: "User info display",
+        location: "render",
+        functions: ["useAuth"]
       },
     },
     {
-      source: "component3",
-      target: "component6",
-      type: "imports",
+      source: "mainContent",
+      target: "dataGrid",
+      type: "uses",
       metadata: {
-        functions: ["formatDate"],
+        usage: "Data display",
+        location: "render",
+        functions: ["DataGrid"]
       },
     },
+    {
+      source: "dataGrid",
+      target: "useData",
+      type: "uses",
+      metadata: {
+        usage: "Data fetching",
+        location: "useEffect",
+        functions: ["useData"]
+      },
+    },
+    {
+      source: "dataGrid",
+      target: "useSort",
+      type: "uses",
+      metadata: {
+        usage: "Sorting functionality",
+        location: "onSort",
+        functions: ["useSort"]
+      },
+    },
+    {
+      source: "useAuth",
+      target: "authContext",
+      type: "uses",
+      metadata: {
+        usage: "Context consumption",
+        location: "useContext",
+        functions: ["useContext"]
+      },
+    },
+    {
+      source: "useTheme",
+      target: "themeProvider",
+      type: "uses",
+      metadata: {
+        usage: "Context consumption",
+        location: "useContext",
+        functions: ["useContext"]
+      },
+    }
   ],
   metadata: {
     generatedBy: "TSProjectAnalyzer",
@@ -128,10 +246,11 @@ export const sampleData: GraphData = {
       analyzeTypes: true,
     },
     stats: {
-      componentCount: 8,
-      hookCount: 5,
-      contextCount: 3,
-      utilityCount: 12,
+      componentCount: 4,
+      hookCount: 4,
+      contextCount: 2,
+      utilityCount: 0,
     },
   },
 };
+

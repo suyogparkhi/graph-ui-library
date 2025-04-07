@@ -7,9 +7,19 @@ interface GraphEdgeProps {
   edge: Edge;
   sourcePos: { x: number; y: number };
   targetPos: { x: number; y: number };
+  isHighlighted?: boolean;
+  isPathHighlighted?: boolean;
+  onClick?: (edge: Edge) => void;
 }
 
-export const GraphEdge: React.FC<GraphEdgeProps> = ({ edge, sourcePos, targetPos }) => {
+export const GraphEdge: React.FC<GraphEdgeProps> = ({ 
+  edge, 
+  sourcePos, 
+  targetPos,
+  isHighlighted = false,
+  isPathHighlighted = false,
+  onClick
+}) => {
   const [showTooltip, setShowTooltip] = useState(false);
   
   // Calculate the angle for the arrow
@@ -29,12 +39,25 @@ export const GraphEdge: React.FC<GraphEdgeProps> = ({ edge, sourcePos, targetPos
   const midX = (startX + endX) / 2;
   const midY = (startY + endY) / 2;
 
+  const getEdgeColor = () => {
+    if (isHighlighted) return 'stroke-blue-500';
+    if (isPathHighlighted) return 'stroke-green-500';
+    return 'stroke-gray-300';
+  };
+
+  const handleEdgeClick = () => {
+    if (onClick) {
+      onClick(edge);
+    }
+  };
+
   return (
     <svg
       className="absolute top-0 left-0 w-full h-full"
       style={{ zIndex: 0 }}
       onMouseEnter={() => setShowTooltip(true)}
       onMouseLeave={() => setShowTooltip(false)}
+      onClick={handleEdgeClick}
     >
       <defs>
         <marker
@@ -47,7 +70,7 @@ export const GraphEdge: React.FC<GraphEdgeProps> = ({ edge, sourcePos, targetPos
         >
           <polygon
             points="0 0, 10 3.5, 0 7"
-            className="fill-gray-300"
+            className={getEdgeColor()}
           />
         </marker>
       </defs>
@@ -59,8 +82,8 @@ export const GraphEdge: React.FC<GraphEdgeProps> = ({ edge, sourcePos, targetPos
           y1={startY}
           x2={endX}
           y2={endY}
-          className="stroke-gray-300 cursor-pointer"
-          strokeWidth="2"
+          className={`${getEdgeColor()} cursor-pointer transition-all duration-200`}
+          strokeWidth={isHighlighted || isPathHighlighted ? "3" : "2"}
           markerEnd="url(#arrowhead)"
         />
         
@@ -81,12 +104,12 @@ export const GraphEdge: React.FC<GraphEdgeProps> = ({ edge, sourcePos, targetPos
         y={midY}
         dy="-5"
         textAnchor="middle"
-        className="text-xs fill-gray-500 pointer-events-none select-none"
+        className={`text-xs ${isHighlighted ? 'fill-blue-500' : isPathHighlighted ? 'fill-green-500' : 'fill-gray-500'} pointer-events-none select-none`}
       >
         {edge.type}
       </text>
 
-      {/* Edge Tooltip */}
+      {/* Enhanced Edge Tooltip */}
       {showTooltip && (
         <foreignObject
           x={midX - 100}
@@ -102,9 +125,14 @@ export const GraphEdge: React.FC<GraphEdgeProps> = ({ edge, sourcePos, targetPos
                 Functions: {edge.metadata.functions.join(', ')}
               </div>
             )}
-            {edge.metadata.usageType && (
+            {edge.metadata.usage && (
               <div className="text-xs text-gray-300">
-                Usage: {edge.metadata.usageType} ({edge.metadata.frequency})
+                Usage: {edge.metadata.usage}
+              </div>
+            )}
+            {edge.metadata.location && (
+              <div className="text-xs text-gray-300">
+                Location: {edge.metadata.location}
               </div>
             )}
           </div>
@@ -112,4 +140,4 @@ export const GraphEdge: React.FC<GraphEdgeProps> = ({ edge, sourcePos, targetPos
       )}
     </svg>
   );
-}
+};
