@@ -1,15 +1,15 @@
 'use client';
 
 import React, { useState, useEffect, useCallback } from 'react';
-import { GraphNode } from './GraphNode';
-import { GraphEdge } from './GraphEdge';
+import GraphNode from './GraphNode';
+import GraphEdge from './GraphEdge';
 import { GraphData, Node, Edge } from '../types/graph';
 
 interface GraphProps {
   data: GraphData;
 }
 
-export const Graph: React.FC<GraphProps> = ({ data }) => {
+  export const Graph: React.FC<GraphProps> = ({ data }) => {
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [highlightedPath, setHighlightedPath] = useState<{
@@ -216,3 +216,8 @@ export const Graph: React.FC<GraphProps> = ({ data }) => {
     </div>
   );
 };
+
+
+
+
+export default Graph;
