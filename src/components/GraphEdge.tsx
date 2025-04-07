@@ -12,7 +12,7 @@ interface GraphEdgeProps {
   onClick?: (edge: Edge) => void;
 }
 
-const GraphEdge: React.FC<GraphEdgeProps> = ({ 
+export const GraphEdge: React.FC<GraphEdgeProps> = ({ 
   edge, 
   sourcePos, 
   targetPos,
@@ -141,5 +141,3 @@ const GraphEdge: React.FC<GraphEdgeProps> = ({
     </svg>
   );
 };
-
-export default GraphEdge;

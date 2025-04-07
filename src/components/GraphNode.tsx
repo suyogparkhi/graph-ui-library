@@ -47,7 +47,7 @@ const getNodeColor = (type: string) => {
   }
 };
 
-const GraphNode: React.FC<GraphNodeProps> = ({ 
+export const GraphNode: React.FC<GraphNodeProps> = ({ 
   node, 
   position, 
   onPositionChange,
@@ -234,6 +234,3 @@ const GraphNode: React.FC<GraphNodeProps> = ({
     </div>
   );
 };
-
-
-export default GraphNode;
