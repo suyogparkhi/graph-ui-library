@@ -1,8 +1,22 @@
 // src/index.ts
-export { default as Graph } from './components/Graph'
-export { default as GraphEdge } from './components/GraphEdge'
-export { default as GraphNode } from './components/GraphNode'
+// Component exports
+export { Graph } from './components/Graph'
+export { GraphEdge } from './components/GraphEdge'
+export { GraphNode } from './components/GraphNode'
 
-// optionally export types or lib/data
-export * from './types/graph'
-export * from './lib/data'
+// Type exports 
+export { 
+  type GraphData,
+  type Node,
+  type Edge,
+  type Section,
+  type SectionItem
+} from './types/graph'
+
+// Utility exports
+export { 
+  sampleData, 
+  typescriptProjectSample,
+  javaProjectSample,
+  djangoProjectSample
+} from './lib/data'
