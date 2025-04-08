@@ -1,6 +1,9 @@
+// src/components/GraphNode.tsx
+'use client';
+
 import React, { useState, useRef, useEffect } from 'react';
-import { FileCode, Package, Box, Code, MoreHorizontal, Info, GitFork, X, ArrowUpRight, ArrowDownRight } from 'lucide-react';
-import { Node } from '../types/graph';
+import { FileCode, Package, Box, Code, MoreHorizontal, Info, GitFork, X, ArrowUpRight, ArrowDownRight, File, FileText, Component, Database, FolderTree } from 'lucide-react';
+import { Node, Section, SectionItem } from '../types/graph';
 
 interface GraphNodeProps {
   node: Node;
@@ -11,12 +14,16 @@ interface GraphNodeProps {
   onNodeClick?: (node: Node) => void;
   onShowDependencies?: (node: Node) => void;
   onShowDependents?: (node: Node) => void;
+  sizeScale?: number;
+  theme?: 'light' | 'dark';
+  totalNodesInView: number;
 }
 
+// Get the appropriate icon based on node type
 const getNodeIcon = (type: string) => {
   switch (type.toLowerCase()) {
     case 'component':
-      return <FileCode className="w-5 h-5" />;
+      return <Component className="w-5 h-5" />;
     case 'hook':
       return <GitFork className="w-5 h-5" />;
     case 'service':
@@ -25,25 +32,70 @@ const getNodeIcon = (type: string) => {
       return <Box className="w-5 h-5" />;
     case 'module':
       return <Package className="w-5 h-5" />;
-    default:
+    case 'class':
       return <FileCode className="w-5 h-5" />;
+    case 'file':
+      return <FileText className="w-5 h-5" />;
+    case 'model':
+      return <Database className="w-5 h-5" />;
+    case 'app':
+      return <FolderTree className="w-5 h-5" />;
+    case 'view':
+      return <Component className="w-5 h-5" />;
+    default:
+      return <File className="w-5 h-5" />;
   }
 };
 
-const getNodeColor = (type: string) => {
+// Get the node color scheme based on its type
+const getNodeColor = (type: string, theme: 'light' | 'dark') => {
+  const isDark = theme === 'dark';
+  
   switch (type.toLowerCase()) {
     case 'component':
-      return 'bg-blue-100 border-blue-500';
+      return isDark 
+        ? 'bg-blue-900/40 border-blue-600 text-blue-50' 
+        : 'bg-blue-50 border-blue-500 text-blue-800';
     case 'hook':
-      return 'bg-purple-100 border-purple-500';
+      return isDark 
+        ? 'bg-purple-900/40 border-purple-600 text-purple-50' 
+        : 'bg-purple-50 border-purple-500 text-purple-800';
     case 'service':
-      return 'bg-green-100 border-green-500';
+      return isDark 
+        ? 'bg-green-900/40 border-green-600 text-green-50' 
+        : 'bg-green-50 border-green-500 text-green-800';
     case 'context':
-      return 'bg-yellow-100 border-yellow-500';
+      return isDark 
+        ? 'bg-yellow-900/40 border-yellow-600 text-yellow-50' 
+        : 'bg-yellow-50 border-yellow-500 text-yellow-800';
     case 'module':
-      return 'bg-orange-100 border-orange-500';
+      return isDark 
+        ? 'bg-orange-900/40 border-orange-600 text-orange-50' 
+        : 'bg-orange-50 border-orange-500 text-orange-800';
+    case 'class':
+      return isDark 
+        ? 'bg-green-900/40 border-green-600 text-green-50' 
+        : 'bg-green-50 border-green-500 text-green-800';
+    case 'file':
+      return isDark 
+        ? 'bg-orange-900/40 border-orange-600 text-orange-50'
+        : 'bg-orange-50 border-orange-500 text-orange-800';
+    case 'model':
+      return isDark 
+        ? 'bg-indigo-900/40 border-indigo-600 text-indigo-50' 
+        : 'bg-indigo-50 border-indigo-500 text-indigo-800';
+    case 'app':
+      return isDark 
+        ? 'bg-red-900/40 border-red-600 text-red-50' 
+        : 'bg-red-50 border-red-500 text-red-800';
+    case 'view':
+      return isDark 
+        ? 'bg-sky-900/40 border-sky-600 text-sky-50' 
+        : 'bg-sky-50 border-sky-500 text-sky-800';
     default:
-      return 'bg-gray-100 border-gray-500';
+      return isDark 
+        ? 'bg-gray-900/40 border-gray-600 text-gray-50' 
+        : 'bg-gray-50 border-gray-500 text-gray-800';
   }
 };
 
@@ -55,120 +107,306 @@ export const GraphNode: React.FC<GraphNodeProps> = ({
   isPathHighlighted = false,
   onNodeClick,
   onShowDependencies,
-  onShowDependents
+  onShowDependents,
+  sizeScale = 1,
+  theme = 'light',
+  totalNodesInView
 }) => {
+  // State management
   const [isDragging, setIsDragging] = useState(false);
-  const [dragOffset, setDragOffset] = useState({ x: 0, y: 0 });
+  const [dragStartPos, setDragStartPos] = useState({ x: 0, y: 0 });
+  const [dragStartNodePos, setDragStartNodePos] = useState({ x: 0, y: 0 });
   const [showMenu, setShowMenu] = useState(false);
   const [showTooltip, setShowTooltip] = useState(false);
+  const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
+  
+  // Refs
   const nodeRef = useRef<HTMLDivElement>(null);
   const tooltipTimeoutRef = useRef<number | undefined>(undefined);
+  const dragThresholdRef = useRef(5); // Minimum pixel movement to start drag
+  const dragStartedRef = useRef(false);
 
+  // Handle cleanup of tooltip timeout
   useEffect(() => {
     return () => {
       if (tooltipTimeoutRef.current) {
-        clearTimeout(tooltipTimeoutRef.current);
+        window.clearTimeout(tooltipTimeoutRef.current);
       }
     };
   }, []);
 
+  // Add global mouse event listeners when dragging
+  useEffect(() => {
+    if (isDragging) {
+      const handleMouseMove = (e: MouseEvent) => {
+        if (!dragStartedRef.current) {
+          // Check if we've moved enough to start a drag
+          const deltaX = Math.abs(e.clientX - dragStartPos.x);
+          const deltaY = Math.abs(e.clientY - dragStartPos.y);
+          
+          if (deltaX > dragThresholdRef.current || deltaY > dragThresholdRef.current) {
+            dragStartedRef.current = true;
+          } else {
+            return; // Don't start dragging yet
+          }
+        }
+        
+        // Calculate new position based on starting positions and current mouse position
+        const newX = dragStartNodePos.x + (e.clientX - dragStartPos.x);
+        const newY = dragStartNodePos.y + (e.clientY - dragStartPos.y);
+        
+        // Update node position
+        onPositionChange(node.id, { x: newX, y: newY });
+      };
+
+      const handleMouseUp = () => {
+        setIsDragging(false);
+        dragStartedRef.current = false;
+        document.body.classList.remove('cursor-grabbing');
+      };
+
+      // Add global event listeners
+      window.addEventListener('mousemove', handleMouseMove);
+      window.addEventListener('mouseup', handleMouseUp);
+
+      // Change cursor
+      document.body.classList.add('cursor-grabbing');
+
+      return () => {
+        window.removeEventListener('mousemove', handleMouseMove);
+        window.removeEventListener('mouseup', handleMouseUp);
+        document.body.classList.remove('cursor-grabbing');
+      };
+    }
+  }, [isDragging, dragStartPos, dragStartNodePos, node.id, onPositionChange]);
+
+  // Node drag start handler
   const handleMouseDown = (e: React.MouseEvent) => {
-    if ((e.target as HTMLElement).closest('.node-menu')) return;
+    // Don't start dragging if clicked on a menu element
+    if ((e.target as HTMLElement).closest('.node-menu')) {
+      return;
+    }
+    
+    e.preventDefault();
+    e.stopPropagation();
+    
+    // Store starting positions
+    setDragStartPos({ x: e.clientX, y: e.clientY });
+    setDragStartNodePos({ x: position.x, y: position.y });
     setIsDragging(true);
-    const rect = e.currentTarget.getBoundingClientRect();
-    setDragOffset({
-      x: e.clientX - rect.left,
-      y: e.clientY - rect.top,
-    });
+    dragStartedRef.current = false;
   };
 
-  const handleMouseMove = (e: React.MouseEvent) => {
-    if (isDragging) {
-      const newX = e.clientX - dragOffset.x;
-      const newY = e.clientY - dragOffset.y;
-      onPositionChange(node.id, { x: newX, y: newY });
+  // Handle node click (when not dragging)
+  const handleNodeClick = (e: React.MouseEvent) => {
+    if (!dragStartedRef.current && onNodeClick) {
+      e.preventDefault();
+      e.stopPropagation();
+      onNodeClick(node);
     }
   };
 
-  const handleMouseUp = () => {
-    setIsDragging(false);
-  };
-
+  // Handle menu toggle
   const handleMenuClick = (e: React.MouseEvent) => {
+    e.preventDefault();
     e.stopPropagation();
     setShowMenu(!showMenu);
     setShowTooltip(false);
   };
 
-  const handleNodeClick = (e: React.MouseEvent) => {
-    if (!isDragging && onNodeClick) {
-      onNodeClick(node);
-    }
-  };
-
+  // Tooltip show/hide handlers
   const handleMouseEnter = () => {
-    if (tooltipTimeoutRef.current) {
-      clearTimeout(tooltipTimeoutRef.current);
+    if (totalNodesInView > 3) {
+      setShowTooltip(true);
     }
-    setShowTooltip(true);
   };
 
   const handleMouseLeave = () => {
-    tooltipTimeoutRef.current = window.setTimeout(() => {
-      setShowTooltip(false);
-    }, 200);
+    setShowTooltip(false);
   };
+
+  // Determine if we're in dark mode
+  const isDark = theme === 'dark';
+
+  // Calculate the node size based on scale
+  const nodeWidth = 180 * sizeScale;
+  
+  // Get display values from node
+  const displayName = node.name || node.title || `Node ${node.id}`;
+  const displayType = node.type || 'unknown';
+  
+  // Process filepath for display
+  const displayPath = (() => {
+    const path = node.filepath || '';
+    if (!path) return '';
+    
+    // Limit path length for display
+    return path.length > 25 ? '...' + path.substring(path.length - 25) : path;
+  })();
+
+  // Generate highlight styles based on state
+  const highlightStyle = isHighlighted
+    ? `ring-4 ${isDark ? 'ring-blue-500/70' : 'ring-blue-500'} scale-110 z-20`
+    : isPathHighlighted
+    ? `ring-2 ${isDark ? 'ring-green-500/70' : 'ring-green-500'} z-10`
+    : '';
+
+  // Generate node color based on type and theme
+  const nodeColor = getNodeColor(displayType, theme);
+
+  // Get shadow based on theme and state
+  const shadowStyle = isDark 
+    ? isDragging 
+      ? 'shadow-lg shadow-black/40' 
+      : 'shadow-md shadow-black/30' 
+    : isDragging 
+      ? 'shadow-lg' 
+      : 'shadow-md';
+
+  // Animation style for dragging
+  const dragStyle = isDragging ? 'opacity-80 scale-105' : 'opacity-100';
+
+  // Update position state when props change
+  useEffect(() => {
+    setTooltipPosition({ x: position.x + nodeWidth / 2, y: position.y - 20 });
+  }, [position.x, position.y, nodeWidth]);
+
+  // Render node sections inside the node if there are <= 3 nodes in view
+  const renderInlineDetails = () => {
+    if (totalNodesInView > 3 || !node.sections || node.sections.length === 0) return null;
+    
+    return (
+      <foreignObject
+        x={-nodeWidth / 2}
+        y={nodeWidth / 2 + 10}
+        width={nodeWidth}
+        height={nodeWidth * 3}
+        overflow="visible"
+        className="pointer-events-none"
+      >
+        <div 
+          className={`rounded-md border overflow-auto max-h-60 text-xs p-2 ${
+            theme === 'dark' 
+              ? 'bg-gray-800 border-gray-700 text-gray-200' 
+              : 'bg-white border-gray-300 text-gray-700'
+          }`}
+        >
+          {node.sections.map((section, index) => (
+            <div key={section.id} className={index > 0 ? 'mt-2' : ''}>
+              <div className="font-semibold">{section.name}</div>
+              {section.items.length > 0 && (
+                <ul className="pl-2 mt-1">
+                  {section.items.slice(0, 3).map(item => (
+                    <li key={item.id} className="truncate">{item.value}</li>
+                  ))}
+                  {section.items.length > 3 && (
+                    <li className="text-gray-500">+{section.items.length - 3} more...</li>
+                  )}
+                </ul>
+              )}
+            </div>
+          ))}
+        </div>
+      </foreignObject>
+    );
+  };
+
+  // Create tooltip content for hover
+  const tooltipContent = (
+    <div
+      className={`absolute z-10 rounded-md shadow-lg p-3 pointer-events-none ${
+        theme === 'dark' ? 'bg-gray-800 text-white' : 'bg-white text-gray-900'
+      }`}
+      style={{
+        transform: `translate(${tooltipPosition.x}px, ${tooltipPosition.y}px)`,
+        width: '280px',
+        maxHeight: '300px',
+        overflow: 'auto',
+        display: showTooltip ? 'block' : 'none'
+      }}
+    >
+      <div className="font-bold mb-1">{node.title}</div>
+      <div className={`text-xs inline-block px-2 py-0.5 rounded-full mb-2 ${
+        theme === 'dark' ? 'bg-gray-700' : 'bg-gray-200'
+      }`}>
+        {node.type}
+      </div>
+        
+      {node.sections && node.sections.map((section, index) => (
+        <div key={section.id} className={index > 0 ? 'mt-2' : ''}>
+          <div className="font-semibold text-sm border-b border-gray-600 mb-1">{section.name}</div>
+          {section.items.length > 0 && (
+            <ul className="pl-2">
+              {section.items.slice(0, 5).map(item => (
+                <li key={item.id} className="text-xs truncate">{item.value}</li>
+              ))}
+              {section.items.length > 5 && (
+                <li className="text-xs text-gray-500">+{section.items.length - 5} more...</li>
+              )}
+            </ul>
+          )}
+        </div>
+      ))}
+    </div>
+  );
 
   return (
     <div
       ref={nodeRef}
-      className={`absolute p-3 rounded-lg border-2 ${getNodeColor(
-        node.type
-      )} shadow-md transition-all duration-200 cursor-move select-none
-      ${isHighlighted ? 'ring-4 ring-blue-500 scale-110' : ''}
-      ${isPathHighlighted ? 'ring-2 ring-green-500' : ''}`}
+      className={`absolute p-3 rounded-lg border-2 ${nodeColor} ${shadowStyle} transition-all duration-200 cursor-grab active:cursor-grabbing select-none
+      ${highlightStyle} ${dragStyle}`}
       style={{
         left: position.x,
         top: position.y,
         transform: 'translate(-50%, -50%)',
-        width: '180px',
-        zIndex: isDragging || showMenu ? 10 : 1,
+        width: `${nodeWidth}px`,
+        zIndex: isDragging || showMenu || isHighlighted ? 50 : isPathHighlighted ? 5 : 1,
+        touchAction: 'none',
       }}
       onMouseDown={handleMouseDown}
-      onMouseMove={handleMouseMove}
-      onMouseUp={handleMouseUp}
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       onClick={handleNodeClick}
     >
       <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
-          {getNodeIcon(node.type)}
-          <span className="font-medium text-sm truncate">{node.name}</span>
+        <div className="flex items-center gap-2 overflow-hidden">
+          {getNodeIcon(displayType)}
+          <span className="font-medium text-sm truncate">{displayName}</span>
         </div>
         <button
-          className="p-1 rounded-full hover:bg-black/5 transition-colors node-menu"
+          className={`p-1 rounded-full transition-colors node-menu
+            ${isDark ? 'hover:bg-white/10' : 'hover:bg-black/5'}`}
           onClick={handleMenuClick}
+          aria-label="Node options"
         >
           <MoreHorizontal className="w-4 h-4" />
         </button>
       </div>
-      <div className="text-xs text-gray-600 mt-1 truncate">
-        {node.filepath}
-      </div>
-      <div className="text-xs bg-white/50 rounded px-2 py-1 mt-1">
-        {node.type}
+      
+      {displayPath && (
+        <div className="text-xs opacity-70 mt-1 truncate">
+          {displayPath}
+        </div>
+      )}
+      
+      <div className={`text-xs ${isDark ? 'bg-gray-800/50' : 'bg-white/50'} rounded px-2 py-1 mt-1`}>
+        {displayType}
       </div>
 
-      {/* Enhanced Context Menu */}
+      {/* Context Menu */}
       {showMenu && (
         <div 
-          className="absolute right-0 top-full mt-1 bg-white rounded-lg shadow-lg border border-gray-200 py-1 w-48 z-20 node-menu"
+          className={`absolute right-0 top-full mt-1 ${
+            isDark ? 'bg-gray-800 border-gray-700' : 'bg-white border-gray-200'
+          } rounded-lg shadow-lg border py-1 w-48 z-50 node-menu`}
           onClick={(e) => e.stopPropagation()}
         >
           <button 
-            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-            onClick={() => {
+            className={`w-full px-3 py-2 text-left text-sm ${
+              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+            } flex items-center gap-2`}
+            onClick={(e) => {
+              e.stopPropagation();
               if (onNodeClick) onNodeClick(node);
               setShowMenu(false);
             }}
@@ -177,8 +415,11 @@ export const GraphNode: React.FC<GraphNodeProps> = ({
             View Details
           </button>
           <button 
-            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-            onClick={() => {
+            className={`w-full px-3 py-2 text-left text-sm ${
+              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+            } flex items-center gap-2`}
+            onClick={(e) => {
+              e.stopPropagation();
               if (onShowDependencies) onShowDependencies(node);
               setShowMenu(false);
             }}
@@ -187,8 +428,11 @@ export const GraphNode: React.FC<GraphNodeProps> = ({
             Show Dependencies
           </button>
           <button 
-            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-            onClick={() => {
+            className={`w-full px-3 py-2 text-left text-sm ${
+              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+            } flex items-center gap-2`}
+            onClick={(e) => {
+              e.stopPropagation();
               if (onShowDependents) onShowDependents(node);
               setShowMenu(false);
             }}
@@ -197,8 +441,13 @@ export const GraphNode: React.FC<GraphNodeProps> = ({
             Show Dependents
           </button>
           <button 
-            className="w-full px-3 py-2 text-left text-sm hover:bg-gray-50 flex items-center gap-2"
-            onClick={() => setShowMenu(false)}
+            className={`w-full px-3 py-2 text-left text-sm ${
+              isDark ? 'hover:bg-gray-700' : 'hover:bg-gray-50'
+            } flex items-center gap-2`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowMenu(false);
+            }}
           >
             <X className="w-4 h-4" />
             Close Menu
@@ -206,31 +455,11 @@ export const GraphNode: React.FC<GraphNodeProps> = ({
         </div>
       )}
 
-      {/* Enhanced Tooltip */}
-      {showTooltip && !showMenu && (
-        <div 
-          className="absolute left-1/2 bottom-full mb-2 -translate-x-1/2 bg-gray-800 text-white px-3 py-2 rounded-lg text-sm whitespace-nowrap z-30"
-          onMouseEnter={() => {
-            if (tooltipTimeoutRef.current) {
-              clearTimeout(tooltipTimeoutRef.current);
-            }
-          }}
-          onMouseLeave={handleMouseLeave}
-        >
-          <div className="font-medium">{node.name}</div>
-          <div className="text-xs text-gray-300">{node.metadata.description}</div>
-          {node.metadata.props && (
-            <div className="text-xs text-blue-300">Props: {node.metadata.props.join(', ')}</div>
-          )}
-          {node.metadata.exports && (
-            <div className="text-xs text-green-300">Exports: {node.metadata.exports.join(', ')}</div>
-          )}
-          {node.metadata.dependencies && (
-            <div className="text-xs text-purple-300">Dependencies: {node.metadata.dependencies.join(', ')}</div>
-          )}
-          <div className="absolute left-1/2 bottom-0 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-gray-800 rotate-45"></div>
-        </div>
-      )}
+      {/* Render inline details if applicable */}
+      {renderInlineDetails()}
+
+      {/* Render tooltip for hovering when many nodes are present */}
+      {showTooltip && totalNodesInView > 3 && tooltipContent}
     </div>
   );
 };
