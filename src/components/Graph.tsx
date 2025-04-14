@@ -2,19 +2,38 @@
 'use client';
 
 import React, { useState, useEffect, useCallback, useRef } from 'react';
-import { GraphNode } from './GraphNode';
-import { GraphEdge } from './GraphEdge';
-import { GraphData, Node, Edge } from '../types/graph';
+// Import our Node type, with explicit renaming to avoid collision with DOM Node type
+import { GraphData, Node as GraphNode, Edge } from '../types/graph';
+
+// Import extracted components
+import { GraphNode as GraphNodeComponent } from './graph-node/GraphNode';
+import { GraphControls } from './graph/GraphControls';
+import { GraphStats } from './graph/GraphStats';
+import { NodeDetailsPanel } from './graph/NodeDetailsPanel';
+import { GraphEdges } from './graph/GraphEdges';
+import { GraphDefs } from './graph/GraphDefs';
+
+// Import layout utilities
+import {
+  createSpiralLayout,
+  createDonutLayout,
+  createCircularLayout,
+  createForceLayout,
+  getInitialZoomScale
+} from '../utils/graphLayout';
 
 interface GraphProps {
   data: GraphData;
   width?: number;
   height?: number;
-  autoLayout?: 'circular' | 'force' | 'tree';
+  autoLayout?: 'circular' | 'force' | 'tree' | 'spiral' | 'donut';
   nodeSizeScale?: number;
   theme?: 'light' | 'dark';
 }
 
+/**
+ * Main Graph component for visualizing nodes and their relationships
+ */
 export const Graph: React.FC<GraphProps> = ({
   data,
   width = 800,
@@ -23,7 +42,7 @@ export const Graph: React.FC<GraphProps> = ({
   nodeSizeScale = 1,
   theme = 'light'
 }) => {
-  // Use the data directly since it's already in the GraphData format
+  // Process incoming data
   const processedData = React.useMemo(() => {
     if (!data || !data.nodes || !Array.isArray(data.nodes)) {
       console.error('Invalid graph data format');
@@ -32,182 +51,69 @@ export const Graph: React.FC<GraphProps> = ({
     return data;
   }, [data]);
 
-  // Get container ref to calculate available space
+  // Refs
   const containerRef = useRef<HTMLDivElement>(null);
-  
-  // State for node positions and selection
+  const graphRef = useRef<SVGSVGElement>(null);
+  const transformGroupRef = useRef<SVGGElement>(null);
+
+  // State
   const [nodePositions, setNodePositions] = useState<Record<string, { x: number; y: number }>>({});
-  const [selectedNode, setSelectedNode] = useState<Node | null>(null);
+  const [selectedNode, setSelectedNode] = useState<GraphNode | null>(null);
   const [highlightedPath, setHighlightedPath] = useState<{
     nodes: Set<string>;
     edges: Set<string>;
   }>({ nodes: new Set(), edges: new Set() });
-  const [isDragging, setIsDragging] = useState(false);
   const [containerSize, setContainerSize] = useState({ width, height });
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  const [transform, setTransform] = useState({ x: 0, y: 0, scale: 1 });
+  const [isPanning, setIsPanning] = useState(false);
+  const [panStart, setPanStart] = useState({ x: 0, y: 0 });
+  const [viewportSize, setViewportSize] = useState({ width: 5000, height: 5000 });
 
-  // Force directed layout simulation
-  const simulation = useRef<any>(null);
-  
   // Handle window resize
   useEffect(() => {
     const handleResize = () => {
       if (containerRef.current) {
         const rect = containerRef.current.getBoundingClientRect();
+        const newWidth = rect.width || width;
+        const newHeight = rect.height || height;
+
         setContainerSize({
-          width: rect.width || width,
-          height: rect.height || height
+          width: newWidth,
+          height: newHeight
+        });
+
+        // Significantly increase the viewport size to allow for nodes dragged far away
+        setViewportSize({
+          width: Math.max(newWidth * 5, 5000),
+          height: Math.max(newHeight * 5, 5000)
         });
       }
     };
 
     handleResize();
     window.addEventListener('resize', handleResize);
-    
+
     return () => {
       window.removeEventListener('resize', handleResize);
     };
   }, [width, height]);
-  
-  // Initialize node positions based on layout type
-  useEffect(() => {
-    if (!processedData.nodes || processedData.nodes.length === 0) return;
-    
-    const nodeCount = processedData.nodes.length;
-    
-    // Calculate available space
-    const availableWidth = containerSize.width * 0.8;
-    const availableHeight = containerSize.height * 0.8;
-    const center = { 
-      x: containerSize.width / 2, 
-      y: containerSize.height / 2
-    };
-    
-    if (autoLayout === 'circular') {
-      // Circular layout
-      const radius = Math.min(availableWidth, availableHeight) / 2;
-      const angleStep = (2 * Math.PI) / nodeCount;
-      
-      const positions = processedData.nodes.reduce((acc, node, index) => {
-        const angle = index * angleStep;
-        acc[node.id] = {
-          x: center.x + radius * Math.cos(angle),
-          y: center.y + radius * Math.sin(angle),
-        };
-        return acc;
-      }, {} as Record<string, { x: number; y: number }>);
-      
-      setNodePositions(positions);
-    } else if (autoLayout === 'tree') {
-      // Simple tree layout (for hierarchical data)
-      const levels: Record<number, string[]> = { 0: [] };
-      const nodeLevel: Record<string, number> = {};
-      const processed = new Set<string>();
-      
-      // Find root nodes (nodes with no incoming edges)
-      const incomingEdges: Record<string, string[]> = {};
-      
-      processedData.edges.forEach(edge => {
-        if (!incomingEdges[edge.target]) {
-          incomingEdges[edge.target] = [];
-        }
-        incomingEdges[edge.target].push(edge.source);
-      });
-      
-      processedData.nodes.forEach(node => {
-        if (!incomingEdges[node.id] || incomingEdges[node.id].length === 0) {
-          levels[0].push(node.id);
-          nodeLevel[node.id] = 0;
-          processed.add(node.id);
-        }
-      });
-      
-      // If no root nodes found, use first node as root
-      if (levels[0].length === 0) {
-        levels[0].push(processedData.nodes[0].id);
-        nodeLevel[processedData.nodes[0].id] = 0;
-        processed.add(processedData.nodes[0].id);
-      }
-      
-      // BFS to assign levels
-      let currentLevel = 0;
-      while (processed.size < processedData.nodes.length) {
-        levels[currentLevel + 1] = [];
-        
-        levels[currentLevel].forEach(sourceId => {
-          processedData.edges.forEach(edge => {
-            if (edge.source === sourceId && !processed.has(edge.target)) {
-              levels[currentLevel + 1].push(edge.target);
-              nodeLevel[edge.target] = currentLevel + 1;
-              processed.add(edge.target);
-            }
-          });
-        });
-        
-        // If no new nodes were added and we still have unprocessed nodes,
-        // find an unprocessed node and make it a root for a new tree
-        if (levels[currentLevel + 1].length === 0 && processed.size < processedData.nodes.length) {
-          const unprocessedNode = processedData.nodes.find(node => !processed.has(node.id));
-          if (unprocessedNode) {
-            levels[currentLevel + 1].push(unprocessedNode.id);
-            nodeLevel[unprocessedNode.id] = currentLevel + 1;
-            processed.add(unprocessedNode.id);
-          }
-        }
-        
-        currentLevel++;
-      }
-      
-      // Calculate positions
-      const maxLevel = currentLevel;
-      const levelHeight = availableHeight / (maxLevel + 1);
-      
-      const positions = {} as Record<string, { x: number; y: number }>;
-      
-      Object.entries(levels).forEach(([level, nodeIds]) => {
-        const lvl = parseInt(level);
-        const nodeWidth = availableWidth / (nodeIds.length + 1);
-        
-        nodeIds.forEach((nodeId, index) => {
-          positions[nodeId] = {
-            x: center.x - availableWidth/2 + nodeWidth * (index + 1),
-            y: center.y - availableHeight/2 + levelHeight * (lvl + 0.5)
-          };
-        });
-      });
-      
-      setNodePositions(positions);
-    } else {
-      // Default: random positions for force layout
-      const positions = processedData.nodes.reduce((acc, node) => {
-        acc[node.id] = {
-          x: center.x + (Math.random() - 0.5) * availableWidth,
-          y: center.y + (Math.random() - 0.5) * availableHeight,
-        };
-        return acc;
-      }, {} as Record<string, { x: number; y: number }>);
-      
-      setNodePositions(positions);
-    }
-  }, [processedData.nodes, processedData.edges, containerSize, autoLayout]);
 
-  // Function to handle node position updates
+  // Handle node position changes
   const handleNodePositionChange = useCallback((id: string, newPosition: { x: number; y: number }) => {
-    setNodePositions((prev) => ({
+    setNodePositions(prev => ({
       ...prev,
-      [id]: newPosition,
+      [id]: newPosition
     }));
-    setIsDragging(true);
   }, []);
 
-  // Function to find connected nodes and edges
+  // Find connected nodes
   const findConnectedNodes = useCallback((nodeId: string) => {
     const connectedNodes = new Set<string>();
     const connectedEdges = new Set<string>();
 
-    // Add the selected node
     connectedNodes.add(nodeId);
 
-    // Find all edges connected to this node
     processedData.edges.forEach((edge) => {
       if (edge.source === nodeId || edge.target === nodeId) {
         connectedEdges.add(`${edge.source}-${edge.target}`);
@@ -219,19 +125,18 @@ export const Graph: React.FC<GraphProps> = ({
     return { nodes: connectedNodes, edges: connectedEdges };
   }, [processedData.edges]);
 
-  // Handle node click
-  const handleNodeClick = useCallback((node: Node) => {
+  // Node click handler
+  const handleNodeClick = useCallback((node: GraphNode) => {
     setSelectedNode(node);
     const { nodes, edges } = findConnectedNodes(node.id);
     setHighlightedPath({ nodes, edges });
   }, [findConnectedNodes]);
 
-  // Handle showing direct dependencies (incoming edges)
-  const handleShowDependencies = useCallback((node: Node) => {
+  // Show node dependencies
+  const handleShowDependencies = useCallback((node: GraphNode) => {
     const dependencies = new Set<string>();
     const dependencyEdges = new Set<string>();
 
-    // Find all nodes that this node depends on
     processedData.edges.forEach((edge) => {
       if (edge.target === node.id) {
         dependencies.add(edge.source);
@@ -245,12 +150,11 @@ export const Graph: React.FC<GraphProps> = ({
     });
   }, [processedData.edges]);
 
-  // Handle showing dependents (outgoing edges)
-  const handleShowDependents = useCallback((node: Node) => {
+  // Show node dependents
+  const handleShowDependents = useCallback((node: GraphNode) => {
     const dependents = new Set<string>();
     const dependentEdges = new Set<string>();
 
-    // Find all nodes that depend on this node
     processedData.edges.forEach((edge) => {
       if (edge.source === node.id) {
         dependents.add(edge.target);
@@ -264,7 +168,7 @@ export const Graph: React.FC<GraphProps> = ({
     });
   }, [processedData.edges]);
 
-  // Handle edge click
+  // Edge click handler
   const handleEdgeClick = useCallback((edge: Edge) => {
     setHighlightedPath({
       nodes: new Set([edge.source, edge.target]),
@@ -272,76 +176,210 @@ export const Graph: React.FC<GraphProps> = ({
     });
   }, []);
 
-  // Handle background click to clear selection
+  // Background click handler
   const handleBackgroundClick = useCallback((e: React.MouseEvent) => {
-    // Only clear if it's a direct background click, not a propagated event
     if (e.target === e.currentTarget) {
       setSelectedNode(null);
       setHighlightedPath({ nodes: new Set(), edges: new Set() });
     }
   }, []);
 
-  // Handle dragging end
-  const handleDragEnd = useCallback(() => {
-    setIsDragging(false);
-  }, []);
-
-  // Get node name for display, handling different data formats
-  const getNodeDisplayName = useCallback((node: Node) => {
+  // Node display utilities
+  const getNodeDisplayName = useCallback((node: GraphNode) => {
     return node.name || node.title || `Node ${node.id}`;
   }, []);
 
-  // Get node type for display
-  const getNodeDisplayType = useCallback((node: Node) => {
+  const getNodeDisplayType = useCallback((node: GraphNode) => {
     return node.type || 'unknown';
   }, []);
 
-  // Get node file path or location
-  const getNodeDisplayPath = useCallback((node: Node) => {
+  const getNodeDisplayPath = useCallback((node: GraphNode) => {
     return node.filepath || node.metadata?.filePath || node.metadata?.path || '';
   }, []);
 
-  // Get node description
-  const getNodeDescription = useCallback((node: Node) => {
-    if (node.metadata?.description) return node.metadata.description;
-    
-    const typeName = getNodeDisplayType(node);
-    const path = getNodeDisplayPath(node);
-    
-    return path ? `${typeName} at ${path}` : typeName;
-  }, [getNodeDisplayType, getNodeDisplayPath]);
-
-  // Calculate edge path statistics
-  const edgeStats = React.useMemo(() => {
-    const types = new Map<string, number>();
-    
-    processedData.edges.forEach(edge => {
-      const type = edge.type || 'unknown';
-      types.set(type, (types.get(type) || 0) + 1);
-    });
-    
-    return {
-      total: processedData.edges.length,
-      types: Object.fromEntries(types.entries())
-    };
-  }, [processedData.edges]);
-
-  // Calculate node type statistics
+  // Calculate node statistics
   const nodeStats = React.useMemo(() => {
     const types = new Map<string, number>();
-    
+
     processedData.nodes.forEach(node => {
       const type = getNodeDisplayType(node);
       types.set(type, (types.get(type) || 0) + 1);
     });
-    
+
     return {
       total: processedData.nodes.length,
       types: Object.fromEntries(types.entries())
     };
   }, [processedData.nodes, getNodeDisplayType]);
+
+  // Handle section toggle in node details panel
+  const toggleSection = useCallback((sectionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedSections((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId);
+      } else {
+        newSet.add(sectionId);
+      }
+      return newSet;
+    });
+  }, []);
+
+  // Zoom and pan handlers
+  const handleWheel = useCallback((e: React.WheelEvent) => {
+    e.preventDefault();
+
+    const svgRect = graphRef.current?.getBoundingClientRect();
+    if (!svgRect) return;
+
+    const pointerX = e.clientX - svgRect.left;
+    const pointerY = e.clientY - svgRect.top;
+
+    // Make zooming more gradual
+    const delta = e.deltaY * -0.005;
+    const newScale = Math.min(Math.max(transform.scale + delta, 0.1), 5);
+    const scaleFactor = newScale / transform.scale;
+
+    const tx = pointerX - (pointerX - transform.x) * scaleFactor;
+    const ty = pointerY - (pointerY - transform.y) * scaleFactor;
+
+    setTransform({
+      x: tx,
+      y: ty,
+      scale: newScale
+    });
+  }, [transform]);
+
+  const handleMouseDown = useCallback((e: React.MouseEvent) => {
+    if ((e.target as HTMLElement).tagName === 'svg' || 
+        (e.target as HTMLElement).classList.contains('graph-background')) {
+      setIsPanning(true);
+      setPanStart({ x: e.clientX - transform.x, y: e.clientY - transform.y });
+    }
+  }, [transform]);
+
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    if (isPanning) {
+      setTransform(prev => ({
+        ...prev,
+        x: e.clientX - panStart.x,
+        y: e.clientY - panStart.y
+      }));
+    }
+  }, [isPanning, panStart]);
+
+  const handleMouseUp = useCallback(() => {
+    setIsPanning(false);
+  }, []);
+
+  const handleResetView = useCallback(() => {
+    const resetScale = getInitialZoomScale(processedData.nodes.length);
+    const translateX = (containerSize.width / 2) - ((viewportSize.width / 2) * resetScale);
+    const translateY = (containerSize.height / 2) - ((viewportSize.height / 2) * resetScale);
+    
+    setTransform({
+      x: translateX,
+      y: translateY,
+      scale: resetScale
+    });
+  }, [containerSize, viewportSize, processedData.nodes.length]);
+
+  const handleZoomIn = useCallback(() => {
+    setTransform(prev => {
+      const newScale = Math.min(prev.scale + 0.2, 5);
+      return {
+        ...prev,
+        scale: newScale
+      };
+    });
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    setTransform(prev => {
+      const newScale = Math.max(prev.scale - 0.2, 0.1);
+      return {
+        ...prev,
+        scale: newScale
+      };
+    });
+  }, []);
+
+  // Layout calculation for nodes
+  useEffect(() => {
+    if (!processedData.nodes || processedData.nodes.length === 0) return;
   
-  // Get color scheme based on theme
+    const nodeCount = processedData.nodes.length;
+  
+    // Calculate available space and center
+    const availableWidth = viewportSize.width * 0.6;
+    const availableHeight = viewportSize.height * 0.6;
+    const center = { 
+      x: viewportSize.width / 2, 
+      y: viewportSize.height / 2
+    };
+  
+    let positions: Record<string, { x: number; y: number }> = {};
+    const actualLayout = nodeCount > 50 && autoLayout === 'circular' ? 'donut' : autoLayout;
+  
+    // Choose layout algorithm based on configuration
+    if (actualLayout === 'circular') {
+      positions = createCircularLayout(
+        processedData.nodes,
+        center,
+        { width: availableWidth, height: availableHeight }
+      );
+    } else if (actualLayout === 'tree') {
+      // Fall back to circular layout
+      positions = createCircularLayout(
+        processedData.nodes,
+        center,
+        { width: availableWidth, height: availableHeight }
+      );
+    } else if (actualLayout === 'spiral') {
+      positions = createSpiralLayout(
+        processedData.nodes,
+        center,
+        { width: availableWidth, height: availableHeight }
+      );
+    } else if (actualLayout === 'donut') {
+      positions = createDonutLayout(
+        processedData.nodes,
+        center,
+        { width: availableWidth, height: availableHeight }
+      );
+    } else {
+      positions = createForceLayout(
+        processedData.nodes,
+        center,
+        { width: availableWidth, height: availableHeight }
+      );
+    }
+  
+    setNodePositions(positions);
+  
+    // Set initial transform to show all nodes at once
+    if (transformGroupRef.current) {
+      const initialScale = getInitialZoomScale(nodeCount);
+      
+      // FIXED TRANSFORM CALCULATION:
+      // We need to calculate how much to translate the viewport so that the center
+      // of the graph (viewportSize/2) is positioned at the center of the container
+      const translateX = (containerSize.width / 2) - ((viewportSize.width / 2) * initialScale);
+      const translateY = (containerSize.height / 2) - ((viewportSize.height / 2) * initialScale);
+                      
+      setTransform({
+        x: translateX,
+        y: translateY,
+        scale: initialScale
+      });
+    }
+  }, [processedData.nodes, processedData.edges, viewportSize, autoLayout, containerSize]);
+  
+  // Also fix the handleResetView function to use the same calculation
+  
+
+  // Background styles
   const colors = theme === 'dark' 
     ? {
         background: 'bg-gray-900',
@@ -363,269 +401,141 @@ export const Graph: React.FC<GraphProps> = ({
       ref={containerRef}
       className={`${colors.background} relative overflow-hidden w-full h-full rounded-lg`}
       style={{ minHeight: `${height}px` }}
-      onClick={handleBackgroundClick}
-      onMouseUp={handleDragEnd}
+      onMouseDown={handleMouseDown}
+      onMouseMove={handleMouseMove}
+      onMouseUp={handleMouseUp}
+      onMouseLeave={handleMouseUp}
     >
-      {/* Dotted background */}
-      <div 
-        className="absolute inset-0"
-        style={{
-          backgroundImage: colors.backgroundPattern,
-          backgroundSize: '20px 20px',
-          backgroundPosition: '0 0, 10px 10px',
+      <svg 
+        ref={graphRef}
+        className="absolute top-0 left-0 w-full h-full cursor-grab"
+        style={{ 
+          cursor: isPanning ? 'grabbing' : 'grab',
+          touchAction: 'none'
         }}
-      />
-
-      {/* Render edges */}
-      <svg className="absolute top-0 left-0 w-full h-full" style={{ zIndex: 0 }}>
-        <defs>
-          <marker
-            id="arrowhead-default"
-            markerWidth="10"
-            markerHeight="7"
-            refX="9"
-            refY="3.5"
-            orient="auto"
-          >
-            <polygon
-              points="0 0, 10 3.5, 0 7"
-              className={`${theme === 'dark' ? 'fill-gray-400' : 'fill-gray-400'}`}
-            />
-          </marker>
-          <marker
-            id="arrowhead-highlighted"
-            markerWidth="10"
-            markerHeight="7"
-            refX="9"
-            refY="3.5"
-            orient="auto"
-          >
-            <polygon
-              points="0 0, 10 3.5, 0 7"
-              className="fill-blue-500"
-            />
-          </marker>
-          <marker
-            id="arrowhead-path"
-            markerWidth="10"
-            markerHeight="7"
-            refX="9"
-            refY="3.5"
-            orient="auto"
-          >
-            <polygon
-              points="0 0, 10 3.5, 0 7"
-              className="fill-green-500"
-            />
-          </marker>
-        </defs>
+        onWheel={handleWheel}
+        onClick={handleBackgroundClick}
+      >
+        <GraphDefs theme={theme} />
         
-        {/* Render all edges */}
-        {processedData.edges.map((edge) => {
-          const sourcePos = nodePositions[edge.source] || { x: 0, y: 0 };
-          const targetPos = nodePositions[edge.target] || { x: 0, y: 0 };
-          
-          // Skip edges where either node position is not yet calculated
-          if (sourcePos.x === 0 && sourcePos.y === 0) return null;
-          if (targetPos.x === 0 && targetPos.y === 0) return null;
-          
-          const isHighlighted = selectedNode && 
-            (selectedNode.id === edge.source || selectedNode.id === edge.target);
-          const isPathHighlighted = highlightedPath.edges.has(`${edge.source}-${edge.target}`);
-          
-          // Calculate the angle for arrow placement
-          const angle = Math.atan2(targetPos.y - sourcePos.y, targetPos.x - sourcePos.x);
-          
-          // Adjust start and end points to account for node radius
-          const nodeRadius = 45 * nodeSizeScale; // Half of typical node width
-          const startX = sourcePos.x + Math.cos(angle) * nodeRadius;
-          const startY = sourcePos.y + Math.sin(angle) * nodeRadius;
-          const endX = targetPos.x - Math.cos(angle) * nodeRadius;
-          const endY = targetPos.y - Math.sin(angle) * nodeRadius;
-          
-          // Get marker and style based on highlight state
-          let markerEnd = "url(#arrowhead-default)";
-          let strokeClass = theme === 'dark' ? 'stroke-gray-600' : 'stroke-gray-300';
-          let strokeWidth = 1.5;
-          
-          if (isPathHighlighted) {
-            markerEnd = "url(#arrowhead-path)";
-            strokeClass = 'stroke-green-500';
-            strokeWidth = 2.5;
-          } else if (isHighlighted) {
-            markerEnd = "url(#arrowhead-highlighted)";
-            strokeClass = 'stroke-blue-500';
-            strokeWidth = 2;
-          }
-          
-          return (
-            <g key={`edge-${edge.source}-${edge.target}`} 
-               onClick={(e) => {
-                 e.stopPropagation();
-                 handleEdgeClick(edge);
-               }}>
-              <line
-                x1={startX}
-                y1={startY}
-                x2={endX}
-                y2={endY}
-                className={`${strokeClass} cursor-pointer transition-all duration-200`}
-                strokeWidth={strokeWidth}
-                markerEnd={markerEnd}
-              />
-              
-              {/* Edge label */}
-              {(isHighlighted || isPathHighlighted) && edge.type && (
-                <text
-                  x={(startX + endX) / 2}
-                  y={(startY + endY) / 2}
-                  dy="-5"
-                  textAnchor="middle"
-                  className={`text-xs select-none pointer-events-none
-                    ${isPathHighlighted ? 'fill-green-500' : 'fill-blue-500'}`}
-                >
-                  {edge.type}
-                </text>
-              )}
-              
-              {/* Invisible wider line for better hover target */}
-              <line
-                x1={startX}
-                y1={startY}
-                x2={endX}
-                y2={endY}
-                strokeWidth="10"
-                className="stroke-transparent cursor-pointer"
-              />
-            </g>
-          );
-        })}
+        <rect 
+          className="graph-background"
+          x="0" 
+          y="0" 
+          width={viewportSize.width} 
+          height={viewportSize.height} 
+          fill="url(#grid-pattern)" 
+          transform={`translate(${transform.x} ${transform.y}) scale(${transform.scale})`}
+        />
+        
+        <g 
+          ref={transformGroupRef}
+          transform={`translate(${transform.x} ${transform.y}) scale(${transform.scale})`}
+        >
+          {/* Render graph edges */}
+          <GraphEdges 
+            edges={processedData.edges}
+            nodePositions={nodePositions}
+            nodeSizeScale={nodeSizeScale}
+            selectedNode={selectedNode}
+            highlightedPath={highlightedPath}
+            theme={theme}
+            transform={transform}
+            onEdgeClick={handleEdgeClick}
+          />
+
+          {/* Render graph nodes */}
+          {processedData.nodes.map((node) => {
+            const position = nodePositions[node.id] || { x: 0, y: 0 };
+
+            if (position.x === 0 && position.y === 0) return null;
+
+            // Remove position culling to allow nodes to be visible even when outside the viewport
+            // When scrolling back to these areas, nodes will be visible again
+
+            const isHighlighted = selectedNode?.id === node.id;
+            const isPathHighlighted = highlightedPath.nodes.has(node.id);
+
+            const displayName = getNodeDisplayName(node);
+            const displayType = getNodeDisplayType(node);
+            const displayPath = getNodeDisplayPath(node);
+
+            return (
+              <foreignObject
+                key={`node-${node.id}`}
+                x={position.x - (180 * nodeSizeScale / 2)}
+                y={position.y - (180 * nodeSizeScale / 2)}
+                width={180 * nodeSizeScale}
+                height={180 * nodeSizeScale}
+                className="overflow-visible"
+              >
+                <GraphNodeComponent
+                  node={{
+                    ...node,
+                    name: displayName,
+                    type: displayType,
+                    filepath: displayPath
+                  }}
+                  position={{ x: 180 * nodeSizeScale / 2, y: 180 * nodeSizeScale / 2 }}
+                  onPositionChange={(id, newPos) => {
+                    const graphPos = {
+                      x: position.x + (newPos.x - (180 * nodeSizeScale / 2)),
+                      y: position.y + (newPos.y - (180 * nodeSizeScale / 2))
+                    };
+                    handleNodePositionChange(id, graphPos);
+                  }}
+                  isHighlighted={isHighlighted}
+                  isPathHighlighted={isPathHighlighted}
+                  onNodeClick={handleNodeClick}
+                  onShowDependencies={handleShowDependencies}
+                  onShowDependents={handleShowDependents}
+                  sizeScale={nodeSizeScale}
+                  theme={theme}
+                  totalNodesInView={processedData.nodes.length}
+                  isInteractive={true}
+                  zoomScale={transform.scale}
+                />
+              </foreignObject>
+            );
+          })}
+        </g>
       </svg>
 
-      {/* Render nodes */}
-      {processedData.nodes.map((node) => {
-        const position = nodePositions[node.id] || { x: 0, y: 0 };
-        
-        // Skip nodes without position (should not happen after layout)
-        if (position.x === 0 && position.y === 0) return null;
-        
-        const isHighlighted = selectedNode?.id === node.id;
-        const isPathHighlighted = highlightedPath.nodes.has(node.id);
-        
-        // Get node data for display
-        const displayName = getNodeDisplayName(node);
-        const displayType = getNodeDisplayType(node);
-        const displayPath = getNodeDisplayPath(node);
-        
-        return (
-          <GraphNode
-            key={`node-${node.id}`}
-            node={{
-              ...node,
-              name: displayName,
-              type: displayType,
-              filepath: displayPath
-            }}
-            position={position}
-            onPositionChange={handleNodePositionChange}
-            isHighlighted={isHighlighted}
-            isPathHighlighted={isPathHighlighted}
-            onNodeClick={handleNodeClick}
-            onShowDependencies={handleShowDependencies}
-            onShowDependents={handleShowDependents}
-            sizeScale={nodeSizeScale}
-            theme={theme}
-            totalNodesInView={processedData.nodes.length}
-          />
-        );
-      })}
+      {/* Control panel */}
+      <GraphControls 
+        onZoomIn={handleZoomIn}
+        onZoomOut={handleZoomOut}
+        onResetView={handleResetView}
+        theme={theme}
+      />
 
       {/* Stats panel */}
-      <div className={`fixed bottom-4 right-4 ${colors.panel} backdrop-blur-sm rounded-lg shadow-sm border p-2 text-xs ${colors.text}`}>
-        <div className="flex gap-3 items-center flex-wrap">
-          {Object.entries(nodeStats.types).map(([type, count], index) => (
-            <div key={`stat-${type}`} className="flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full" 
-                  style={{ 
-                    backgroundColor: type === 'component' ? '#3b82f6' : 
-                                    type === 'hook' ? '#8b5cf6' : 
-                                    type === 'context' ? '#eab308' :
-                                    type === 'class' ? '#22c55e' :
-                                    type === 'file' ? '#f97316' :
-                                    '#6b7280'
-                  }} />
-              <span className={colors.textSecondary}>{type}s: {count}</span>
-            </div>
-          ))}
-          {nodeStats.types && Object.keys(nodeStats.types).length > 0 && (
-            <div className="h-4 w-px bg-gray-200 mx-1" />
-          )}
-          <div className={colors.textSecondary}>
-            Total: {nodeStats.total}
-          </div>
-        </div>
-        <div className={`text-[10px] mt-1 ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-          Project: {processedData.projectName || 'Unknown'} | 
-          Language: {processedData.language || 'Unknown'} |
-          {processedData.metadata?.generatedBy ? ` Generated by ${processedData.metadata.generatedBy}` : ''}
-        </div>
-      </div>
+      <GraphStats
+        nodeStats={nodeStats}
+        data={processedData}
+        transform={transform}
+        theme={theme}
+      />
 
-      {/* Selected node details panel */}
-      {selectedNode && (
-        <div 
-          className={`fixed top-4 left-4 ${colors.panel} backdrop-blur-sm rounded-lg p-3 text-sm max-w-xs shadow-lg border ${colors.text}`}
-          onClick={(e) => e.stopPropagation()}
-        >
-          <div className="font-medium mb-2">{getNodeDisplayName(selectedNode)}</div>
-          <div className={`text-xs ${colors.textSecondary}`}>{getNodeDisplayPath(selectedNode)}</div>
-          <div className={`text-xs ${colors.textSecondary} mt-1`}>Type: {getNodeDisplayType(selectedNode)}</div>
-          
-          {selectedNode.sections && selectedNode.sections.length > 0 && (
-            <div className="mt-2">
-              {selectedNode.sections.map(section => (
-                <div key={section.id} className="mt-1">
-                  <div className="text-xs font-medium">{section.name}</div>
-                  {section.items.slice(0, 3).map(item => (
-                    <div key={item.id} className={`text-xs ${colors.textSecondary} truncate`}>
-                      • {item.value}
-                    </div>
-                  ))}
-                  {section.items.length > 3 && (
-                    <div className={`text-xs ${theme === 'dark' ? 'text-gray-500' : 'text-gray-400'}`}>
-                      + {section.items.length - 3} more...
-                    </div>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          
-          {selectedNode.metadata?.description && (
-            <div className={`text-xs ${colors.textSecondary} mt-1`}>{selectedNode.metadata.description}</div>
-          )}
-          
-          {/* Show dependency info */}
-          <div className="mt-2 pt-2 border-t border-gray-200">
-            <div className="flex gap-2">
-              <button 
-                onClick={() => handleShowDependencies(selectedNode)}
-                className={`text-xs px-2 py-1 rounded ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}
-              >
-                Show Dependencies
-              </button>
-              <button 
-                onClick={() => handleShowDependents(selectedNode)}
-                className={`text-xs px-2 py-1 rounded ${theme === 'dark' ? 'bg-gray-700 hover:bg-gray-600' : 'bg-gray-100 hover:bg-gray-200'}`}
-              >
-                Show Dependents
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+      {/* Node details panel */}
+      <NodeDetailsPanel
+        node={selectedNode}
+        position={selectedNode && nodePositions[selectedNode.id] 
+          ? nodePositions[selectedNode.id] 
+          : null}
+        containerSize={containerSize}
+        theme={theme}
+        expandedSections={expandedSections}
+        onToggleSection={toggleSection}
+        onShowDependencies={handleShowDependencies}
+        onShowDependents={handleShowDependents}
+        onClose={() => setSelectedNode(null)}
+        getNodeDisplayName={getNodeDisplayName}
+        getNodeDisplayType={getNodeDisplayType}
+        getNodeDisplayPath={getNodeDisplayPath}
+      />
     </div>
   );
-}
+};
 
 export default Graph;
