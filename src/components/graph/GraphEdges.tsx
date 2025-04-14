@@ -1,5 +1,6 @@
 import React from 'react';
 import { Edge, Node } from '../../types/graph';
+import { calculateNodeIntersection } from '../../utils/graph/edgeUtils';
 
 interface GraphEdgesProps {
   edges: Edge[];
@@ -31,8 +32,12 @@ export const GraphEdges: React.FC<GraphEdgesProps> = ({
         const sourcePos = nodePositions[edge.source] || { x: 0, y: 0 };
         const targetPos = nodePositions[edge.target] || { x: 0, y: 0 };
 
-        if (sourcePos.x === 0 && sourcePos.y === 0) return null;
-        if (targetPos.x === 0 && targetPos.y === 0) return null;
+
+        if (!sourcePos || !targetPos || 
+          (sourcePos.x === 0 && sourcePos.y === 0) || 
+          (targetPos.x === 0 && targetPos.y === 0)) {
+          return null;
+        }
 
         const isHighlighted = selectedNode && 
           (selectedNode.id === edge.source || selectedNode.id === edge.target);
@@ -40,11 +45,29 @@ export const GraphEdges: React.FC<GraphEdgesProps> = ({
 
         const angle = Math.atan2(targetPos.y - sourcePos.y, targetPos.x - sourcePos.x);
 
-        const nodeRadius = 45 * nodeSizeScale;
-        const startX = sourcePos.x + Math.cos(angle) * nodeRadius;
-        const startY = sourcePos.y + Math.sin(angle) * nodeRadius;
-        const endX = targetPos.x - Math.cos(angle) * nodeRadius;
-        const endY = targetPos.y - Math.sin(angle) * nodeRadius;
+        // REPLACE THIS SECTION
+        // Calculate node dimensions - match these with your actual node size
+        const nodeWidth = 180 * nodeSizeScale; // Width of your node
+        const nodeHeight = 90 * nodeSizeScale;  // Height of your node (adjust based on actual dimensions)
+        
+        // Add some padding to prevent edges from exactly touching the borders
+        const sourcePadding = 5; 
+        const targetPadding = 6; // Slightly larger for arrowhead
+        
+        // Calculate start point (from source node border)
+        const sourceIntersection = calculateNodeIntersection(
+          sourcePos.x, sourcePos.y, nodeWidth, nodeHeight, angle, sourcePadding
+        );
+        
+        // Calculate end point (to target node border)
+        const targetIntersection = calculateNodeIntersection(
+          targetPos.x, targetPos.y, nodeWidth, nodeHeight, angle + Math.PI, targetPadding
+        );
+        
+        const startX = sourceIntersection.x;
+        const startY = sourceIntersection.y;
+        const endX = targetIntersection.x;
+        const endY = targetIntersection.y;
 
         let markerEnd = "url(#arrowhead-default)";
         let strokeClass = theme === 'dark' ? 'stroke-gray-600' : 'stroke-gray-300';

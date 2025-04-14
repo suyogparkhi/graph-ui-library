@@ -42,6 +42,10 @@ export function useDragHandler(
 
       // Update node position with the exact position
       onPositionChange(nodeId, { x: newX, y: newY });
+      
+      // Update mouse position reference to current position
+      // This is the key fix - update reference position after each move
+      mousePositionRef.current = { x: e.clientX, y: e.clientY };
     };
 
     const handleMouseUp = () => {
@@ -81,4 +85,4 @@ export function useDragHandler(
   };
 
   return { isDragging, startDrag };
-} 
+}

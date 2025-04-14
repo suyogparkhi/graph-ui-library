@@ -25,7 +25,7 @@ export const GraphDefs: React.FC<GraphDefsProps> = ({ theme }) => {
         id="arrowhead-default"
         markerWidth="10"
         markerHeight="7"
-        refX="9"
+        refX="8"
         refY="3.5"
         orient="auto"
       >
@@ -38,7 +38,7 @@ export const GraphDefs: React.FC<GraphDefsProps> = ({ theme }) => {
         id="arrowhead-highlighted"
         markerWidth="10"
         markerHeight="7"
-        refX="9"
+        refX="8"
         refY="3.5"
         orient="auto"
       >
@@ -51,7 +51,7 @@ export const GraphDefs: React.FC<GraphDefsProps> = ({ theme }) => {
         id="arrowhead-path"
         markerWidth="10"
         markerHeight="7"
-        refX="9"
+        refX="8"
         refY="3.5"
         orient="auto"
       >

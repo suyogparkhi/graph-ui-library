@@ -274,12 +274,16 @@ export const Graph: React.FC<GraphProps> = ({
   }, []);
 
   const handleResetView = useCallback(() => {
+    const resetScale = getInitialZoomScale(processedData.nodes.length);
+    const translateX = (containerSize.width / 2) - ((viewportSize.width / 2) * resetScale);
+    const translateY = (containerSize.height / 2) - ((viewportSize.height / 2) * resetScale);
+    
     setTransform({
-      x: (containerSize.width / 2) - (viewportSize.width / 2),
-      y: (containerSize.height / 2) - (viewportSize.height / 2),
-      scale: 1
+      x: translateX,
+      y: translateY,
+      scale: resetScale
     });
-  }, [containerSize, viewportSize]);
+  }, [containerSize, viewportSize, processedData.nodes.length]);
 
   const handleZoomIn = useCallback(() => {
     setTransform(prev => {
@@ -304,19 +308,20 @@ export const Graph: React.FC<GraphProps> = ({
   // Layout calculation for nodes
   useEffect(() => {
     if (!processedData.nodes || processedData.nodes.length === 0) return;
-
+  
     const nodeCount = processedData.nodes.length;
-
+  
+    // Calculate available space and center
     const availableWidth = viewportSize.width * 0.6;
     const availableHeight = viewportSize.height * 0.6;
     const center = { 
       x: viewportSize.width / 2, 
       y: viewportSize.height / 2
     };
-
+  
     let positions: Record<string, { x: number; y: number }> = {};
     const actualLayout = nodeCount > 50 && autoLayout === 'circular' ? 'donut' : autoLayout;
-
+  
     // Choose layout algorithm based on configuration
     if (actualLayout === 'circular') {
       positions = createCircularLayout(
@@ -325,8 +330,7 @@ export const Graph: React.FC<GraphProps> = ({
         { width: availableWidth, height: availableHeight }
       );
     } else if (actualLayout === 'tree') {
-      // TODO: Implement tree layout in the layoutUtils file
-      // For now, fall back to circular layout
+      // Fall back to circular layout
       positions = createCircularLayout(
         processedData.nodes,
         center,
@@ -351,20 +355,29 @@ export const Graph: React.FC<GraphProps> = ({
         { width: availableWidth, height: availableHeight }
       );
     }
-
+  
     setNodePositions(positions);
-
+  
     // Set initial transform to show all nodes at once
     if (transformGroupRef.current) {
       const initialScale = getInitialZoomScale(nodeCount);
-                        
+      
+      // FIXED TRANSFORM CALCULATION:
+      // We need to calculate how much to translate the viewport so that the center
+      // of the graph (viewportSize/2) is positioned at the center of the container
+      const translateX = (containerSize.width / 2) - ((viewportSize.width / 2) * initialScale);
+      const translateY = (containerSize.height / 2) - ((viewportSize.height / 2) * initialScale);
+                      
       setTransform({
-        x: (containerSize.width / 2) - (viewportSize.width / 2),
-        y: (containerSize.height / 2) - (viewportSize.height / 2),
+        x: translateX,
+        y: translateY,
         scale: initialScale
       });
     }
   }, [processedData.nodes, processedData.edges, viewportSize, autoLayout, containerSize]);
+  
+  // Also fix the handleResetView function to use the same calculation
+  
 
   // Background styles
   const colors = theme === 'dark' 
