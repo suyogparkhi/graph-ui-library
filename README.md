@@ -53,3 +53,93 @@ export default tseslint.config({
 })
 ```
 # graph-ui-library
+
+# Graph UI Library
+
+A modern, interactive library for visualizing dependency graphs and node relationships.
+
+## Features
+
+- **Interactive Graph Visualization**: Built with ReactFlow for smooth, interactive graph experiences
+- **Multiple Layout Options**: Choose from circular, force-directed, and spiral layouts
+- **Dependency Views**: Full graph view, dependencies-only view, and dependents-only view
+- **Dark/Light Theme Support**: Fully themable interface that works in both dark and light modes
+- **Responsive Design**: Works across different screen sizes
+- **Project Structure Visualization**: Visualize complex projects with node types and relationships
+
+## Usage
+
+To start the development server:
+
+```bash
+npm run dev
+```
+
+## Graph Features
+
+- **Zoom & Pan**: Use mouse wheel to zoom, click and drag to pan
+- **Node Selection**: Click on nodes to see details and highlight connections
+- **Multiple Views**: Toggle between full graph, dependencies, and dependents
+- **Interactive UI**: Nodes are draggable and the graph is fully interactive
+
+## Implementation
+
+This library uses ReactFlow under the hood, providing a robust and performant graph visualization solution. Key components include:
+
+- **Graph Component**: Main component handling graph rendering and interaction
+- **Node Representation**: Custom nodes with proper styling and interactive behavior
+- **Edge Handling**: Properly styled and animated edges between nodes
+- **Layout Algorithms**: Various layout options for different visualization needs
+
+## Data Structure
+
+The graph visualization requires data in the following format:
+
+```typescript
+interface GraphData {
+  nodes: Node[];
+  edges: Edge[];
+  metadata?: Record<string, any>;
+  projectName?: string;
+  language?: string;
+}
+
+interface Node {
+  id: string;
+  title?: string;
+  name?: string;
+  type?: string;
+  filepath?: string;
+  metadata?: Record<string, any>;
+  sections?: {
+    id: string;
+    name: string;
+    items: { id: string; value: string }[];
+  }[];
+}
+
+interface Edge {
+  source: string;
+  target: string;
+  type?: string;
+}
+```
+
+## Customization
+
+You can customize the visualization by changing the props of the Graph component:
+
+```tsx
+<Graph 
+  data={graphData} 
+  width={800} 
+  height={700} 
+  autoLayout="force" // Options: 'circular', 'force', 'spiral', 'donut'
+  nodeSizeScale={1}
+  theme="dark" // or 'light'
+/>
+```
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.

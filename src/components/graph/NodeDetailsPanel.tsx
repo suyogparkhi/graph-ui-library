@@ -1,37 +1,47 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { X, ArrowUpRight, ArrowDownRight, ChevronDown, ChevronRight } from 'lucide-react';
 import { Node } from '../../types/graph';
 
 interface NodeDetailsPanelProps {
   node: Node | null;
-  position: { x: number; y: number } | null;
-  containerSize: { width: number; height: number };
   theme: 'light' | 'dark';
-  expandedSections: Set<string>;
-  onToggleSection: (sectionId: string, e: React.MouseEvent) => void;
-  onShowDependencies: (node: Node) => void;
-  onShowDependents: (node: Node) => void;
   onClose: () => void;
-  getNodeDisplayName: (node: Node) => string;
-  getNodeDisplayType: (node: Node) => string;
-  getNodeDisplayPath: (node: Node) => string;
 }
 
 export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
   node,
-  position,
-  containerSize,
   theme,
-  expandedSections,
-  onToggleSection,
-  onShowDependencies,
-  onShowDependents,
-  onClose,
-  getNodeDisplayName,
-  getNodeDisplayType,
-  getNodeDisplayPath
+  onClose
 }) => {
-  if (!node || !position) return null;
+  const [expandedSections, setExpandedSections] = useState<Set<string>>(new Set());
+  
+  if (!node) return null;
+
+  const toggleSection = (sectionId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setExpandedSections((prev) => {
+      const newSet = new Set(prev);
+      if (newSet.has(sectionId)) {
+        newSet.delete(sectionId);
+      } else {
+        newSet.add(sectionId);
+      }
+      return newSet;
+    });
+  };
+
+  // Helper functions for node display
+  const getNodeDisplayName = (node: Node): string => {
+    return node.name || node.title || `Node ${node.id}`;
+  };
+
+  const getNodeDisplayType = (node: Node): string => {
+    return node.type || 'unknown';
+  };
+
+  const getNodeDisplayPath = (node: Node): string => {
+    return node.filepath || node.metadata?.filePath || node.metadata?.path || '';
+  };
 
   const colors = theme === 'dark' 
     ? {
@@ -59,13 +69,7 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
 
   return (
     <div 
-      className={`fixed z-50 ${colors.panel} backdrop-blur-md rounded-lg shadow-xl border max-h-[80vh] overflow-hidden flex flex-col w-[350px] transition-all duration-300`}
-      style={{
-        left: position ? 
-              Math.min(Math.max(position.x + 100, 20), containerSize.width - 370) : 20,
-        top: position ? 
-             Math.min(Math.max(position.y - 100, 20), containerSize.height - 300) : 20,
-      }}
+      className={`${colors.panel} backdrop-blur-md rounded-lg shadow-xl border max-h-[80vh] overflow-hidden flex flex-col w-[350px] transition-all duration-300`}
       onClick={(e) => e.stopPropagation()}
     >
       <div className={`p-3 flex items-center justify-between border-b ${colors.border}`}>
@@ -115,7 +119,7 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
             >
               <button
                 className={`w-full text-left p-2 flex items-center justify-between ${colors.itemHoverBg}`}
-                onClick={(e) => onToggleSection(section.id, e)}
+                onClick={(e) => toggleSection(section.id, e)}
               >
                 <span className="font-medium text-sm">{section.name}</span>
                 {expandedSections.has(section.id) ? 
@@ -124,7 +128,7 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
                 }
               </button>
               
-              {expandedSections.has(section.id) && section.items.length > 0 && (
+              {expandedSections.has(section.id) && section.items && section.items.length > 0 && (
                 <div className={`px-2 pb-2 ${colors.sectionContentBg}`}>
                   {section.items.map(item => (
                     <div 
@@ -146,33 +150,6 @@ export const NodeDetailsPanel: React.FC<NodeDetailsPanelProps> = ({
             No additional details available
           </div>
         )}
-      </div>
-      
-      <div className={`p-3 border-t ${colors.border}`}>
-        <div className="flex gap-2 justify-between">
-          <button 
-            onClick={() => onShowDependencies(node)}
-            className={`text-xs flex-1 px-3 py-2 rounded flex items-center justify-center gap-1 ${
-              theme === 'dark' ? 
-                'bg-gray-700 hover:bg-gray-600 text-white' : 
-                'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            <ArrowDownRight className="w-3.5 h-3.5" />
-            Dependencies
-          </button>
-          <button 
-            onClick={() => onShowDependents(node)}
-            className={`text-xs flex-1 px-3 py-2 rounded flex items-center justify-center gap-1 ${
-              theme === 'dark' ? 
-                'bg-gray-700 hover:bg-gray-600 text-white' : 
-                'bg-gray-100 hover:bg-gray-200 text-gray-700'
-            }`}
-          >
-            <ArrowUpRight className="w-3.5 h-3.5" />
-            Dependents
-          </button>
-        </div>
       </div>
     </div>
   );

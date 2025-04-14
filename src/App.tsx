@@ -15,7 +15,7 @@ function App() {
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [selectedNode, setSelectedNode] = useState<Node | null>(null);
   const [searchQuery, setSearchQuery] = useState<string>('');
-  const [displayMode, setDisplayMode] = useState<'list' | 'dependencies' | 'dependents'>('list');
+  const [displayMode, setDisplayMode] = useState<'full' | 'dependencies' | 'dependents'>('full');
   const [sortBy, setSortBy] = useState<'name' | 'type'>('name');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('asc');
   const [expandedTypes, setExpandedTypes] = useState<Record<string, boolean>>({});
@@ -70,24 +70,34 @@ function App() {
     });
   });
 
-  // Find related nodes and edges based on the selected node
+  // Find related nodes and edges based on the selected node and display mode
   const getFilteredGraphData = (): GraphData => {
-    if (!selectedNode) return { nodes: [], edges: [], metadata: graphData.metadata };
+    if (!selectedNode) {
+      // Show full graph if no node is selected
+      if (displayMode === 'full') {
+        return graphData;
+      }
+      return { nodes: [], edges: [], metadata: graphData.metadata };
+    }
   
     const nodeIds = new Set<string>([selectedNode.id]);
     const filteredEdges: Edge[] = [];
   
-    if (displayMode === 'dependencies' || displayMode === 'dependents') {
-      graphData.edges.forEach(edge => {
-        if (displayMode === 'dependencies' && edge.source === selectedNode.id) {
+    graphData.edges.forEach(edge => {
+      if (displayMode === 'full' || displayMode === 'dependencies') {
+        if (edge.source === selectedNode.id) {
           nodeIds.add(edge.target);
           filteredEdges.push(edge);
-        } else if (displayMode === 'dependents' && edge.target === selectedNode.id) {
+        }
+      }
+      
+      if (displayMode === 'full' || displayMode === 'dependents') {
+        if (edge.target === selectedNode.id) {
           nodeIds.add(edge.source);
           filteredEdges.push(edge);
         }
-      });
-    }
+      }
+    });
   
     const filteredNodes = graphData.nodes.filter(node => nodeIds.has(node.id));
     
@@ -114,6 +124,18 @@ function App() {
     setTheme(prevTheme => prevTheme === 'light' ? 'dark' : 'light');
   };
 
+  // Handle node selection from the sidebar
+  const handleNodeSelect = (node: Node) => {
+    setSelectedNode(node);
+    setDisplayMode('dependencies');
+  };
+
+  // Clear node selection
+  const clearSelection = () => {
+    setSelectedNode(null);
+    setDisplayMode('full');
+  };
+
   return (
     <div className={`min-h-screen ${theme === 'dark' ? 'bg-gray-900 text-white' : 'bg-gray-100 text-gray-900'}`}>
       {/* Header */}
@@ -126,6 +148,40 @@ function App() {
             </p>
           </div>
           <div className="flex items-center gap-4">
+            {/* Display mode selector */}
+            <div className={`rounded-md overflow-hidden flex ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} border ${theme === 'dark' ? 'border-gray-700' : 'border-gray-300'}`}>
+              <button
+                onClick={() => setDisplayMode('full')}
+                className={`px-3 py-1 flex items-center text-sm ${
+                  displayMode === 'full'
+                    ? theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'
+                    : ''
+                }`}
+              >
+                Full Graph
+              </button>
+              <button
+                onClick={() => setDisplayMode('dependencies')}
+                className={`px-3 py-1 flex items-center text-sm ${
+                  displayMode === 'dependencies'
+                    ? theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'
+                    : ''
+                }`}
+              >
+                Dependencies
+              </button>
+              <button
+                onClick={() => setDisplayMode('dependents')}
+                className={`px-3 py-1 flex items-center text-sm ${
+                  displayMode === 'dependents'
+                    ? theme === 'dark' ? 'bg-gray-700 text-white' : 'bg-gray-200 text-gray-800'
+                    : ''
+                }`}
+              >
+                Dependents
+              </button>
+            </div>
+            
             {/* Theme toggle */}
             <button 
               onClick={toggleTheme}
@@ -173,18 +229,18 @@ function App() {
             </div>
           </div>
 
-          {/* Main display area */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            {/* Node list sidebar */}
+          {/* Main layout - Split into sidebar and graph */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+            {/* Sidebar with component list */}
             <div className={`rounded-lg shadow-sm ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'} overflow-hidden`}>
               <div className="p-4 border-b border-gray-700">
-                <h3 className="text-lg font-semibold mb-2">Nodes</h3>
+                <h3 className="text-lg font-semibold mb-2">Components</h3>
                 
                 {/* Search box */}
                 <div className="relative mb-4">
                   <input
                     type="text"
-                    placeholder="Search nodes..."
+                    placeholder="Search components..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
                     className={`w-full pl-10 pr-4 py-2 rounded-md border ${
@@ -226,7 +282,7 @@ function App() {
                 </div>
               </div>
               
-              {/* Node list */}
+              {/* Component list */}
               <div className="p-2 overflow-auto" style={{ maxHeight: 'calc(700px - 180px)' }}>
                 {searchQuery ? (
                   // Show flat list when searching
@@ -238,10 +294,7 @@ function App() {
                       {filteredNodes.map(node => (
                         <li key={node.id}>
                           <button
-                            onClick={() => {
-                              setSelectedNode(node);
-                              setDisplayMode('dependencies');
-                            }}
+                            onClick={() => handleNodeSelect(node)}
                             className={`w-full text-left px-3 py-2 rounded-md ${
                               selectedNode?.id === node.id
                                 ? theme === 'dark' ? 'bg-blue-700' : 'bg-blue-100'
@@ -281,10 +334,7 @@ function App() {
                             {sortedNodesByType[type].map(node => (
                               <li key={node.id}>
                                 <button
-                                  onClick={() => {
-                                    setSelectedNode(node);
-                                    setDisplayMode('dependencies');
-                                  }}
+                                  onClick={() => handleNodeSelect(node)}
                                   className={`w-full text-left px-3 py-2 rounded-md ${
                                     selectedNode?.id === node.id
                                       ? theme === 'dark' ? 'bg-blue-700' : 'bg-blue-100' 
@@ -303,67 +353,31 @@ function App() {
                 )}
               </div>
             </div>
-            
-            {/* Graph container */}
-            <div className="md:col-span-2">
-              <div className={`h-[700px] rounded-lg shadow-sm overflow-hidden relative ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
-                {selectedNode ? (
-                  <>
-                    {/* Display mode selector */}
-                    <div className="absolute top-4 right-4 z-10 flex items-center bg-gray-800 bg-opacity-80 rounded-md shadow-md">
-                      <button
-                        onClick={() => setDisplayMode('dependencies')}
-                        className={`px-3 py-1 rounded-l-md flex items-center space-x-1 ${displayMode === 'dependencies' 
-                          ? theme === 'dark' ? 'bg-blue-700' : 'bg-blue-500 text-white' 
-                          : ''}`}
-                      >
-                        <ArrowUpRight size={16} />
-                        <span>Dependencies</span>
-                      </button>
-                      <button
-                        onClick={() => setDisplayMode('dependents')}
-                        className={`px-3 py-1 rounded-r-md flex items-center space-x-1 ${displayMode === 'dependents' 
-                          ? theme === 'dark' ? 'bg-blue-700' : 'bg-blue-500 text-white' 
-                          : ''}`}
-                      >
-                        <ArrowDownRight size={16} />
-                        <span>Dependents</span>
-                      </button>
-                    </div>
-                    
-                    {/* Back button */}
-                    <button
-                      onClick={() => {
-                        setSelectedNode(null);
-                        setDisplayMode('list');
-                      }}
-                      className="absolute top-4 left-4 z-10 flex items-center space-x-1 px-3 py-1 bg-gray-800 bg-opacity-80 rounded-md shadow-md"
-                    >
-                      <X size={16} />
-                      <span>Close</span>
-                    </button>
-                  
-                    <Graph 
-                      data={getFilteredGraphData()} 
-                      width={800} 
-                      height={700} 
-                      autoLayout="circular"
-                      nodeSizeScale={1}
-                      theme={theme}
-                    />
-                  </>
-                ) : (
-                  <div className="flex items-center justify-center h-full">
-                    <div className="text-center">
-                      <p className={`text-lg ${theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}`}>
-                        Select a node from the list to visualize its dependencies
-                      </p>
-                    </div>
-                  </div>
+
+            {/* Graph Visualization */}
+            <div className="md:col-span-3">
+              <div className={`relative h-[700px] rounded-lg shadow-sm overflow-hidden ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
+                {selectedNode && (
+                  <button
+                    onClick={clearSelection}
+                    className="absolute top-4 left-4 z-10 flex items-center space-x-1 px-3 py-1 bg-gray-800 bg-opacity-80 text-white rounded-md shadow-md"
+                  >
+                    <X size={16} />
+                    <span>Clear Selection</span>
+                  </button>
                 )}
+                
+                <Graph 
+                  data={getFilteredGraphData()} 
+                  width={800} 
+                  height={700} 
+                  autoLayout={selectedNode ? 'circular' : 'force'}
+                  nodeSizeScale={1}
+                  theme={theme}
+                />
               </div>
               
-              {/* Node details if a node is selected */}
+              {/* Selected node details */}
               {selectedNode && (
                 <div className={`mt-4 p-4 rounded-lg shadow-sm ${theme === 'dark' ? 'bg-gray-800' : 'bg-white'}`}>
                   <h3 className="text-lg font-semibold mb-2">
@@ -373,36 +387,10 @@ function App() {
                     </span>
                   </h3>
                   
-                  {selectedNode.sections && selectedNode.sections.length > 0 && (
-                    <div className="mt-2">
-                      <h4 className="text-sm font-medium mb-1">Sections:</h4>
-                      <ul className={`space-y-1 ${theme === 'dark' ? 'text-gray-300' : 'text-gray-700'}`}>
-                        {selectedNode.sections.map(section => (
-                          <li key={section.id} className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                            <div className="font-medium">{section.name}</div>
-                            <div className="text-sm pl-4 mt-1">
-                              Items: {section.items.length}
-                            </div>
-                          </li>
-                        ))}
-                      </ul>
-                    </div>
-                  )}
-                  
-                  {selectedNode.metadata && Object.keys(selectedNode.metadata).length > 0 && (
-                    <div className="mt-4">
-                      <h4 className="text-sm font-medium mb-1">Metadata:</h4>
-                      <div className={`p-2 rounded ${theme === 'dark' ? 'bg-gray-700' : 'bg-gray-100'}`}>
-                        {Object.entries(selectedNode.metadata).map(([key, value]) => (
-                          typeof value !== 'object' ? (
-                            <div key={key} className="grid grid-cols-3 gap-2 text-sm">
-                              <span className={theme === 'dark' ? 'text-gray-400' : 'text-gray-500'}>{key}:</span>
-                              <span className="col-span-2">{String(value)}</span>
-                            </div>
-                          ) : null
-                        ))}
-                      </div>
-                    </div>
+                  {selectedNode.filepath && (
+                    <p className={`text-sm ${theme === 'dark' ? 'text-gray-300' : 'text-gray-600'}`}>
+                      Path: {selectedNode.filepath}
+                    </p>
                   )}
                 </div>
               )}
@@ -425,7 +413,8 @@ function App() {
               <li><strong>Django Projects</strong> - Models, views, and app structure</li>
             </ul>
             <p className="mb-4">
-              The focused view shows only a selected node and its direct connections, making it easier to understand specific dependencies.
+              Select a component from the sidebar to view its dependencies in the graph. Use the view controls to toggle
+              between viewing dependencies, dependents, or both.
             </p>
             <div className="flex justify-end">
               <button 
